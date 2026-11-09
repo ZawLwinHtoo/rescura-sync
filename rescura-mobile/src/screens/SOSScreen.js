@@ -28,8 +28,13 @@ export default function SOSScreen() {
   ];
 
   const submitSOS = async () => {
-    if (!affectedCount.trim() || isNaN(Number(affectedCount))) {
-      Alert.alert('Validation Required', 'Please enter a valid number of affected people.');
+    if (!supabase) {
+      setStatusMessage('Error: Cloud reporting is not configured. No request was sent.');
+      return;
+    }
+    if (!affectedCount.trim() || !Number.isSafeInteger(Number(affectedCount)) || Number(affectedCount) <= 0) {
+      setStatusMessage('Error: Enter a positive whole number of affected people.');
+      Alert.alert('Validation Required', 'Please enter a positive whole number of affected people.');
       return;
     }
 
@@ -74,8 +79,8 @@ export default function SOSScreen() {
         setStatusMessage('Error: Broadcast Failed. Check network connection.');
       } else {
         setTransmissionSuccess(true);
-        Alert.alert('🚨 SOS TELEMETRY SENT', 'Your emergency GPS coordinates have been received by the Situation Command Center.');
-        setStatusMessage('Emergency Telemetry Transmitted Successfully!');
+        Alert.alert('Report saved', 'The configured database accepted your report. A dispatcher receipt or emergency response has not been confirmed.');
+        setStatusMessage('Report saved to the configured database. Dispatcher receipt is not confirmed.');
 
         // Reset form inputs on success
         setLocationNotes('');
@@ -101,7 +106,7 @@ export default function SOSScreen() {
         </View>
         <Text style={styles.titleText}>Civilian SOS Telemetry</Text>
         <Text style={styles.subtitleText}>
-          Broadcast live GPS emergency coordinates directly to the Situation Awareness Command Center.
+          Portfolio demonstration: submit a location report to your configured database. This app does not contact emergency services.
         </Text>
       </View>
 
@@ -110,10 +115,10 @@ export default function SOSScreen() {
         <Text style={styles.gpsLockIcon}>📡</Text>
         <View style={styles.gpsLockTextContainer}>
           <Text style={styles.gpsLockTitle}>GPS Telemetry Status</Text>
-          <Text style={styles.gpsLockSub}>High-Precision Satellite Lock Ready</Text>
+          <Text style={styles.gpsLockSub}>Location permission is requested when you submit</Text>
         </View>
         <View style={styles.gpsActivePill}>
-          <Text style={styles.gpsActivePillText}>READY</Text>
+          <Text style={styles.gpsActivePillText}>ON SUBMIT</Text>
         </View>
       </View>
 

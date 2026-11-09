@@ -1,0 +1,50 @@
+name: Local demo checks
+on: [push, pull_request]
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r backend/requirements.txt
+      - run: python run_tests.py
+        working-directory: backend
+      - run: docker compose config --quiet
+  mobile-web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rescura-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: rescura-mobile/package-lock.json
+      - run: npm ci
+      - run: npx expo export --platform web
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RESCURA_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up --build --detach
+      - name: Check packaged dashboard and database
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/health; then break; fi
+            sleep 2
+          done
+          curl --fail http://127.0.0.1:8000/health
+          curl --fail http://127.0.0.1:8000/ --output /tmp/dashboard.html
+          test -s /tmp/dashboard.html
+          docker compose exec -T db psql -U rescura -d rescura_db -c 'SELECT count(*) FROM historical_rescue_ops;'
+      - if: failure()
+        run: docker compose logs --tail 100
+      - if: always()
+        run: docker compose down --volumes

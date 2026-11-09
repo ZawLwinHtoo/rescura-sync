@@ -265,6 +265,8 @@ async def fetch_active_disasters() -> List[Dict[str, Any]]:
     Always returns immediate results (memory/disk cache or instant fallback), refreshing in background if stale.
     """
     global _gdacs_cache, _last_fetch_time
+    if os.getenv("RESCURA_OFFLINE", "").lower() in {"1", "true", "yes"}:
+        return []
     now = time.time()
 
     # 1. Warm memory cache from disk if empty

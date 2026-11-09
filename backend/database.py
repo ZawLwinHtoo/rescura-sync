@@ -76,23 +76,45 @@ SessionLocal = AsyncSessionLocal
 Base = declarative_base()
 
 
+def configure_sqlite(database_engine):
+    if database_engine.dialect.name != "sqlite":
+        return
+    @sqlalchemy.event.listens_for(database_engine.sync_engine, "connect")
+    def pragmas(connection, _):
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=10000")
+        cursor.close()
+
+
+configure_sqlite(engine)
+
+
+async def _create_schema(database_engine):
+    async with database_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        def columns(sync_connection):
+            inspector = sqlalchemy.inspect(sync_connection)
+            if not inspector.has_table("historical_rescue_ops"):
+                return set()
+            return {column["name"] for column in inspector.get_columns("historical_rescue_ops")}
+        existing = await conn.run_sync(columns)
+        if existing:
+            for column in ("latitude", "longitude"):
+                if column not in existing:
+                    await conn.execute(sqlalchemy.text(f"ALTER TABLE historical_rescue_ops ADD COLUMN {column} FLOAT"))
+
+
 async def init_db_schema():
     global engine, AsyncSessionLocal, SessionLocal
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            try:
-                await conn.execute(sqlalchemy.text("ALTER TABLE historical_rescue_ops ADD COLUMN latitude FLOAT"))
-            except Exception:
-                pass
-            try:
-                await conn.execute(sqlalchemy.text("ALTER TABLE historical_rescue_ops ADD COLUMN longitude FLOAT"))
-            except Exception:
-                pass
+        await _create_schema(engine)
     except Exception as err:
         print(f"[Database Warning] Primary database connection failed ({type(err).__name__}). Falling back to local SQLite.")
+        await engine.dispose()
         fb_kwargs: dict[str, Any] = {"poolclass": NullPool}
         engine = create_async_engine(SQLITE_DATABASE_URL, echo=False, future=True, **fb_kwargs)
+        configure_sqlite(engine)
         AsyncSessionLocal = async_sessionmaker(
             bind=engine,
             class_=AsyncSession,
@@ -101,16 +123,7 @@ async def init_db_schema():
             autoflush=False
         )
         SessionLocal = AsyncSessionLocal
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            try:
-                await conn.execute(sqlalchemy.text("ALTER TABLE historical_rescue_ops ADD COLUMN latitude FLOAT"))
-            except Exception:
-                pass
-            try:
-                await conn.execute(sqlalchemy.text("ALTER TABLE historical_rescue_ops ADD COLUMN longitude FLOAT"))
-            except Exception:
-                pass
+        await _create_schema(engine)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
