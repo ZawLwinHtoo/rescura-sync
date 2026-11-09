@@ -20,7 +20,7 @@ from sqlalchemy.orm import selectinload
 
 import models
 import database as _db_module
-from database import Base, engine, get_db
+from database import Base, get_db
 
 def _get_session_local():
     """Returns the current AsyncSessionLocal (may be SQLite fallback after startup)."""
@@ -88,11 +88,7 @@ async def lifespan(app: FastAPI):
     FastAPI lifespan context manager that creates database tables on startup,
     trains the AI model using historical CSV data, and spawns the background GDACS polling task.
     """
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    except Exception as e:
-        print(f"Warning: Could not create database tables automatically ({str(e)})")
+    await _db_module.init_db_schema()
 
     csv_path = os.path.join(BASE_DIR, "historical_disasters.csv")
     try:
@@ -165,19 +161,21 @@ async def lifespan(app: FastAPI):
         print(f"Startup seeding notice: {seed_err}")
 
     # Launch asynchronous background GDACS disaster polling task
-    poller_task = asyncio.create_task(poll_gdacs_loop())
+    offline_feed = os.getenv("RESCURA_OFFLINE", "").lower() in {"1", "true", "yes"}
+    poller_task = None if offline_feed else asyncio.create_task(poll_gdacs_loop())
 
     yield
 
     # Clean shutdown handling on Ctrl + C / application exit
-    poller_task.cancel()
-    try:
-        await poller_task
-    except (asyncio.CancelledError, Exception):
-        pass
+    if poller_task:
+        poller_task.cancel()
+        try:
+            await poller_task
+        except (asyncio.CancelledError, Exception):
+            pass
 
     try:
-        await engine.dispose()
+        await _db_module.engine.dispose()
     except Exception:
         pass
 

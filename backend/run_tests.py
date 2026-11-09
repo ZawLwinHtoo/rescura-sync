@@ -3,6 +3,13 @@ from fastapi.testclient import TestClient
 import sys
 import os
 import logging
+import tempfile
+import shutil
+
+# Tests must never connect to an operator's database or live disaster services.
+_test_storage = tempfile.TemporaryDirectory(prefix="rescura-tests-")
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///" + os.path.join(_test_storage.name, "test.db").replace("\\", "/")
+os.environ["RESCURA_OFFLINE"] = "1"
 
 # Suppress verbose logging for clean test output
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -10,9 +17,20 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 # Ensure backend directory is in path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+import main
 from main import app
 
-client = TestClient(app)
+async def _test_feed():
+    return [{"title": "Bago Flood Zone", "lat": 17.33, "lon": 96.48,
+             "severity": 6.0, "created_at": "2026-01-01T00:00:00Z",
+             "event_type": "Flood", "country": "Myanmar"}]
+
+main.fetch_active_disasters = _test_feed
+import ml_model
+_test_csv = os.path.join(_test_storage.name, "cleaned_myanmar_data.csv")
+shutil.copyfile(ml_model.CLEAN_DATA_PATH, _test_csv)
+ml_model.CLEAN_DATA_PATH = _test_csv
+ml_model.MODEL_PATH = os.path.join(_test_storage.name, "model.joblib")
 
 class TestRescuraSyncAPI(unittest.TestCase):
 
@@ -203,20 +221,7 @@ class TestRescuraSyncAPI(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        # Clean up all test records and restore hub stock so tests never leave residues
-        import sqlite3
-        try:
-            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rescura_sync.db")
-            conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            c.execute("DELETE FROM inventory_transactions WHERE notes LIKE '%Testing%' OR notes LIKE '%Alpha-1%' OR notes LIKE '%Test physical%' OR source_or_destination LIKE '%Test%'")
-            c.execute("DELETE FROM disaster_missions WHERE disaster_identifier LIKE '%bagofloodzone%'")
-            # Restore Hub 1 balances
-            c.execute("UPDATE rescue_depots SET water_inventory = 1006000.0, food_inventory = 140000.0, medical_kits = 3350 WHERE id = 1")
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print("Cleanup error:", e)
+        _test_storage.cleanup()
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

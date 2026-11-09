@@ -89,6 +89,7 @@ if %ERRORLEVEL% neq 0 (
     echo.
     echo [WARNING] Package installation encountered issues. Retrying with basic flags...
     pip install -r "backend\requirements.txt" --no-cache-dir
+    if !ERRORLEVEL! neq 0 exit /b 1
 )
 
 :: 5. Launch Rescura Sync Server & Open UI in Browser
@@ -103,7 +104,7 @@ echo.
 start "" /b powershell -NoProfile -Command "Start-Sleep -Seconds 2; Start-Process 'http://127.0.0.1:8000'"
 
 cd backend
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
 
 echo.
 echo [INFO] Rescura Sync server has stopped.

@@ -1,0 +1,10 @@
+.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/.env
+**/.env.local
+**/*.db
+**/*.db-*
+backend/cache
+rescura-mobile
